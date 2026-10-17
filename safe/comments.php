@@ -1,5 +1,6 @@
 
 <?php
+session_name('SAFE_PORTAL');
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -9,6 +10,9 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once __DIR__ . '/../config.php';
 
+// Local educational demonstration only.
+// Comments are intentionally rendered without HTML escaping.
+
 function e($value) {
     return htmlspecialchars(
         (string)$value,
@@ -17,125 +21,91 @@ function e($value) {
     );
 }
 
-if (empty($_SESSION['comments_csrf_token'])) {
-    $_SESSION['comments_csrf_token'] =
-        bin2hex(random_bytes(32));
-}
-
-$id = filter_input(
-    INPUT_GET,
-    'announcement_id',
-    FILTER_VALIDATE_INT
-);
-
-if (!$id || $id < 1) {
-    http_response_code(400);
-    exit('Invalid announcement ID.');
-}
-
-$stmt = $pdo->prepare(
-    'SELECT id, title, content, created_at
+// Automatically select the first available announcement.
+$announcementStmt = $pdo->query(
+    "SELECT id, title, content
      FROM announcements
-     WHERE id = ?'
+     ORDER BY id ASC
+     LIMIT 1"
 );
-$stmt->execute([$id]);
-$announcement = $stmt->fetch();
+
+$announcement = $announcementStmt->fetch();
 
 if (!$announcement) {
-    http_response_code(404);
-    exit('Announcement not found.');
+    exit('No announcements found. Import database/setup.sql first.');
 }
 
+$announcementId = (int)$announcement['id'];
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token = $_POST['csrf_token'] ?? '';
-
-    if (
-        !is_string($token) ||
-        !hash_equals(
-            $_SESSION['comments_csrf_token'],
-            $token
-        )
-    ) {
-        http_response_code(403);
-        exit('Invalid CSRF token.');
-    }
-
     $comment = trim($_POST['comment'] ?? '');
 
     if ($comment === '') {
         $error = 'Comment cannot be empty.';
     } elseif (mb_strlen($comment, 'UTF-8') > 2000) {
-        $error = 'Comment cannot exceed 2000 characters.';
+        $error = 'Comment is too long.';
     } else {
-        $insert = $pdo->prepare(
-            'INSERT INTO comments
+        $stmt = $pdo->prepare(
+            "INSERT INTO comments
              (announcement_id, user_id, comment)
-             VALUES (?, ?, ?)'
+             VALUES (?, ?, ?)"
         );
 
-        $insert->execute([
-            $id,
-            $_SESSION['user_id'],
+        $stmt->execute([
+            $announcementId,
+            (int)$_SESSION['user_id'],
             $comment
         ]);
 
-        $_SESSION['comments_csrf_token'] =
-            bin2hex(random_bytes(32));
-
-        header(
-            'Location: comments.php?announcement_id=' .
-            $id . '&posted=1'
-        );
+        header('Location: comments.php?posted=1');
         exit;
     }
 }
 
-$commentsStmt = $pdo->prepare(
-    'SELECT c.comment, c.created_at, u.full_name
+// Retrieve comments from the database.
+$stmt = $pdo->prepare(
+    "SELECT c.id, c.comment, c.created_at, u.full_name
      FROM comments c
      JOIN users u ON c.user_id = u.id
      WHERE c.announcement_id = ?
-     ORDER BY c.created_at DESC, c.id DESC'
+     ORDER BY c.id DESC"
 );
 
-$commentsStmt->execute([$id]);
-$comments = $commentsStmt->fetchAll();
-
+$stmt->execute([$announcementId]);
+$comments = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Announcement Comments</title>
+    <title>Comments - Vulnerable Portal</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 
 <nav class="sidebar">
     <h2>University Portal</h2>
+
     <a href="dashboard.php">Dashboard</a>
-    <a href="announcements.php" class="active">Announcements</a>
+    <a href="search.php">Search Students</a>
+    <a href="directory.php">Student Directory</a>
+    <a href="comments.php" class="active">Comments</a>
+    <a href="profile.php">My Profile</a>
     <a href="logout.php">Logout</a>
 </nav>
 
 <main>
+    <h1 class="page-title">Student Comments</h1>
 
-    <a class="back-link" href="announcements.php">
-        &larr; Back to Announcements
-    </a>
+    <p class="subtitle">
+        Share your thoughts about university announcements.
+    </p>
 
     <div class="card">
-        <h1><?= e($announcement['title']) ?></h1>
-
-        <p class="meta">
-            Published:
-            <?= e($announcement['created_at']) ?>
-        </p>
-
-        <p class="announcement-content"><?= e($announcement['content']) ?></p>
+        <h2><?= e($announcement['title']) ?></h2>
+        <p><?= e($announcement['content']) ?></p>
     </div>
 
     <div class="card">
@@ -153,21 +123,13 @@ $comments = $commentsStmt->fetchAll();
             </div>
         <?php endif; ?>
 
-        <form method="POST"
-              action="comments.php?announcement_id=<?= (int)$id ?>">
-
-            <input
-                type="hidden"
-                name="csrf_token"
-                value="<?= e($_SESSION['comments_csrf_token']) ?>"
-            >
-
+        <form method="POST" action="comments.php">
             <textarea
                 name="comment"
                 maxlength="2000"
                 placeholder="Write your comment..."
                 required
-            ><?= isset($comment) ? e($comment) : '' ?></textarea>
+            ></textarea>
 
             <p>
                 <button class="btn" type="submit">
@@ -178,10 +140,10 @@ $comments = $commentsStmt->fetchAll();
     </div>
 
     <div class="card">
-        <h2>Student Comments (<?= count($comments) ?>)</h2>
+        <h2>All Comments (<?= count($comments) ?>)</h2>
 
         <?php if (!$comments): ?>
-            <p>No comments yet. Be the first to comment.</p>
+            <p>No comments yet.</p>
         <?php endif; ?>
 
         <?php foreach ($comments as $c): ?>
@@ -192,7 +154,10 @@ $comments = $commentsStmt->fetchAll();
                     <?= e($c['created_at']) ?>
                 </p>
 
-                <p><?= e($c['comment']) ?></p>
+                <!-- Intentionally unsafe: Stored XSS -->
+                <div class="comment-text">
+                   <?= e($c['comment']) ?>
+                </div>
             </div>
         <?php endforeach; ?>
     </div>
