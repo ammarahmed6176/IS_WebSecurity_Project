@@ -1,4 +1,6 @@
+
 <?php
+session_name('SAFE_PORTAL');
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -8,17 +10,22 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once __DIR__ . '/../config.php';
 
-function e($value) {
-    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
-}
-
-$input = trim($_GET['student_id'] ?? '');
+$studentId = trim($_GET['student_id'] ?? '');
 $result = null;
 $error = '';
 
-if ($input !== '') {
+function e($value) {
+    return htmlspecialchars(
+        (string)$value,
+        ENT_QUOTES,
+        'UTF-8'
+    );
+}
+
+if ($studentId !== '') {
+
     $id = filter_var(
-        $input,
+        $studentId,
         FILTER_VALIDATE_INT,
         ['options' => ['min_range' => 1]]
     );
@@ -26,6 +33,7 @@ if ($input !== '') {
     if ($id === false) {
         $error = 'Please enter a valid positive student ID.';
     } else {
+        // Secure: parameterized SQL query.
         $stmt = $pdo->prepare(
             "SELECT COUNT(*)
              FROM users
@@ -42,7 +50,7 @@ if ($input !== '') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Student Lookup</title>
+    <title>Student Lookup - Safe</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -50,12 +58,10 @@ if ($input !== '') {
 <nav class="sidebar">
     <h2>University Portal</h2>
     <a href="dashboard.php">Dashboard</a>
-    <a href="announcements.php">Announcements</a>
-    <a href="directory.php">Student Directory</a>
     <a href="search.php">Search Students</a>
+    <a href="directory.php">Student Directory</a>
     <a href="lookup.php" class="active">Student Lookup</a>
-    <a href="advanced_search.php">Advanced Search</a>
-    <a href="fees.php">My Fees</a>
+    <a href="comments.php">Comments</a>
     <a href="profile.php">My Profile</a>
     <a href="logout.php">Logout</a>
 </nav>
@@ -68,15 +74,15 @@ if ($input !== '') {
 
     <div class="card">
         <form method="GET" action="lookup.php">
+
             <label for="student_id">Student ID</label>
 
             <input
-                id="student_id"
                 type="text"
+                id="student_id"
                 name="student_id"
-                value="<?= e($input) ?>"
+                value="<?= e($studentId) ?>"
                 placeholder="Enter Student ID"
-                maxlength="20"
                 style="display:block;width:100%;padding:12px;margin:12px 0;border:1px solid #cbd5e1;border-radius:7px"
                 required
             >
@@ -106,7 +112,7 @@ if ($input !== '') {
             <?php endif; ?>
         </div>
     <?php endif; ?>
-</main>
 
+</main>
 </body>
 </html>
