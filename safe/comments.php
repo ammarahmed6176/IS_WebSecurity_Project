@@ -1,4 +1,3 @@
-
 <?php
 session_name('SAFE_PORTAL');
 session_start();
@@ -10,9 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once __DIR__ . '/../config.php';
 
-// Local educational demonstration only.
-// Comments are intentionally rendered without HTML escaping.
-
+// Secure output encoding
 function e($value) {
     return htmlspecialchars(
         (string)$value,
@@ -21,7 +18,13 @@ function e($value) {
     );
 }
 
-// Automatically select the first available announcement.
+// Generate CSRF token
+if (empty($_SESSION['comments_csrf_token'])) {
+    $_SESSION['comments_csrf_token'] =
+        bin2hex(random_bytes(32));
+}
+
+// Select first available announcement
 $announcementStmt = $pdo->query(
     "SELECT id, title, content
      FROM announcements
@@ -38,7 +41,23 @@ if (!$announcement) {
 $announcementId = (int)$announcement['id'];
 $error = '';
 
+// Handle comment submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // Verify CSRF token
+    $token = $_POST['csrf_token'] ?? '';
+
+    if (
+        !is_string($token) ||
+        !hash_equals(
+            $_SESSION['comments_csrf_token'],
+            $token
+        )
+    ) {
+        http_response_code(403);
+        exit('Invalid CSRF token.');
+    }
+
     $comment = trim($_POST['comment'] ?? '');
 
     if ($comment === '') {
@@ -46,6 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (mb_strlen($comment, 'UTF-8') > 2000) {
         $error = 'Comment is too long.';
     } else {
+
+        // Secure database insertion
         $stmt = $pdo->prepare(
             "INSERT INTO comments
              (announcement_id, user_id, comment)
@@ -58,12 +79,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $comment
         ]);
 
+        // Regenerate token after successful submission
+        $_SESSION['comments_csrf_token'] =
+            bin2hex(random_bytes(32));
+
         header('Location: comments.php?posted=1');
         exit;
     }
 }
 
-// Retrieve comments from the database.
+// Fetch comments
 $stmt = $pdo->prepare(
     "SELECT c.id, c.comment, c.created_at, u.full_name
      FROM comments c
@@ -80,14 +105,13 @@ $comments = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Comments - Vulnerable Portal</title>
+    <title>Comments - Safe Portal</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 
 <nav class="sidebar">
     <h2>University Portal</h2>
-
     <a href="dashboard.php">Dashboard</a>
     <a href="search.php">Search Students</a>
     <a href="directory.php">Student Directory</a>
@@ -124,6 +148,13 @@ $comments = $stmt->fetchAll();
         <?php endif; ?>
 
         <form method="POST" action="comments.php">
+
+            <input
+                type="hidden"
+                name="csrf_token"
+                value="<?= e($_SESSION['comments_csrf_token']) ?>"
+            >
+
             <textarea
                 name="comment"
                 maxlength="2000"
@@ -148,20 +179,22 @@ $comments = $stmt->fetchAll();
 
         <?php foreach ($comments as $c): ?>
             <div class="comment">
+
                 <strong><?= e($c['full_name']) ?></strong>
 
                 <p class="meta">
                     <?= e($c['created_at']) ?>
                 </p>
 
-                <!-- Intentionally unsafe: Stored XSS -->
+                <!-- Safe: HTML is escaped -->
                 <div class="comment-text">
-                   <?= e($c['comment']) ?>
+                    <?= e($c['comment']) ?>
                 </div>
+
             </div>
         <?php endforeach; ?>
     </div>
-
 </main>
+
 </body>
 </html>
