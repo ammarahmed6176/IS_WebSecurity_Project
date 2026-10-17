@@ -130,7 +130,12 @@ function e($value) {
 
 <nav class="sidebar">
     <h2>University Portal</h2>
+
     <a class="active" href="dashboard.php">Dashboard</a>
+    <a href="announcements.php">Announcements</a>
+    <a href="directory.php">Student Directory</a>
+    <a href="search.php">Search Students</a>
+    <a href="profile.php">My Profile</a>
     <a href="logout.php">Logout</a>
 </nav>
 
