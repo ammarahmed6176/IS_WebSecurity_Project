@@ -1,4 +1,6 @@
+
 <?php
+session_name('SAFE_PORTAL');
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -9,23 +11,55 @@ if (!isset($_SESSION['user_id'])) {
 require_once __DIR__ . '/../config.php';
 
 function e($value) {
-    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars(
+        (string)$value,
+        ENT_QUOTES,
+        'UTF-8'
+    );
 }
 
-$stmt = $pdo->query(
+// Display student directory
+$directoryStmt = $pdo->query(
     "SELECT id, full_name, email, role
      FROM users
-     ORDER BY full_name ASC"
+     ORDER BY id ASC"
 );
 
-$students = $stmt->fetchAll();
+$students = $directoryStmt->fetchAll();
+
+// Secure record lookup
+$recordId = trim($_GET['record_id'] ?? '');
+$lookupResults = [];
+$error = '';
+
+if ($recordId !== '') {
+    $id = filter_var(
+        $recordId,
+        FILTER_VALIDATE_INT,
+        ['options' => ['min_range' => 1]]
+    );
+
+    if ($id === false) {
+        $error = 'Please enter a valid positive record ID.';
+    } else {
+        // Secure: prepared statement
+        $stmt = $pdo->prepare(
+            "SELECT id, full_name, email, role
+             FROM users
+             WHERE id = ?"
+        );
+
+        $stmt->execute([$id]);
+        $lookupResults = $stmt->fetchAll();
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Student Directory</title>
+    <title>Student Directory - Safe</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -33,49 +67,82 @@ $students = $stmt->fetchAll();
 <nav class="sidebar">
     <h2>University Portal</h2>
     <a href="dashboard.php">Dashboard</a>
-    <a href="announcements.php">Announcements</a>
-    <a href="directory.php" class="active">Student Directory</a>
     <a href="search.php">Search Students</a>
+    <a href="directory.php" class="active">Student Directory</a>
+    <a href="lookup.php">Student Lookup</a>
+    <a href="comments.php">Comments</a>
     <a href="profile.php">My Profile</a>
     <a href="logout.php">Logout</a>
 </nav>
 
 <main>
     <h1 class="page-title">Student Directory</h1>
-    <p class="subtitle">Registered university students</p>
+    <p class="subtitle">
+        Browse university students and look up records.
+    </p>
 
     <div class="card">
-        <h2>Student Records (<?= count($students) ?>)</h2>
+        <h2>Registered Students</h2>
 
-        <div style="overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Full Name</th>
-                        <th>Email</th>
-                        <th>Role</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($students as $student): ?>
-                    <tr>
-                        <td><?= (int)$student['id'] ?></td>
-                        <td><?= e($student['full_name']) ?></td>
-                        <td><?= e($student['email']) ?></td>
-                        <td><?= e($student['role']) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-
-                <?php if (!$students): ?>
-                    <tr>
-                        <td colspan="4">No students found.</td>
-                    </tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+        <?php foreach ($students as $student): ?>
+            <div class="comment">
+                <strong><?= e($student['full_name']) ?></strong>
+                <p>Email: <?= e($student['email']) ?></p>
+                <p class="meta">
+                    ID: <?= (int)$student['id'] ?>
+                    | Role: <?= e($student['role']) ?>
+                </p>
+            </div>
+        <?php endforeach; ?>
     </div>
+
+    <div class="card">
+        <h2>Advanced Record Lookup</h2>
+
+        <form method="GET" action="directory.php">
+            <label for="record_id">Student Record ID</label>
+
+            <input
+                type="text"
+                id="record_id"
+                name="record_id"
+                value="<?= e($recordId) ?>"
+                placeholder="Enter record ID"
+                style="display:block;width:100%;padding:12px;margin:12px 0;border:1px solid #cbd5e1;border-radius:7px"
+            >
+
+            <button class="btn" type="submit">
+                Search Record
+            </button>
+        </form>
+    </div>
+
+    <?php if ($error): ?>
+        <div class="alert alert-error">
+            <?= e($error) ?>
+        </div>
+    <?php elseif ($recordId !== ''): ?>
+        <div class="card">
+            <h2>Lookup Results</h2>
+
+            <p class="meta">
+                <?= count($lookupResults) ?> record(s) returned.
+            </p>
+
+            <?php foreach ($lookupResults as $row): ?>
+                <div class="comment">
+                    <p>ID: <?= e($row['id']) ?></p>
+                    <p>Name: <?= e($row['full_name']) ?></p>
+                    <p>Email: <?= e($row['email']) ?></p>
+                    <p>Role: <?= e($row['role']) ?></p>
+                </div>
+            <?php endforeach; ?>
+
+            <?php if (!$lookupResults): ?>
+                <p>No matching record found.</p>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 
     <div class="card">
         <h2>Directory Preview</h2>
@@ -88,6 +155,7 @@ $students = $stmt->fetchAll();
     const preview = params.get('preview');
 
     if (preview !== null) {
+        // Safe: display user-controlled input as plain text.
         document.getElementById('directory-preview').textContent = preview;
     }
 </script>
