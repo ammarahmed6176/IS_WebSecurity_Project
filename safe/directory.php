@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+
 require_once __DIR__ . '/../config.php';
 
 function e($value) {
