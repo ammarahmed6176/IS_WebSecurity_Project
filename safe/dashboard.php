@@ -7,6 +7,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+
 $stmt = $pdo->prepare(
     'SELECT id, full_name, email, role
      FROM users
