@@ -2,6 +2,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 
+
 $count = $pdo->query(
     "SELECT COUNT(*) FROM announcements"
 )->fetchColumn();
